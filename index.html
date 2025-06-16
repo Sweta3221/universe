@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mini galaxy</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden; /* Hide scrollbars */
+            background-color: #000; /* Black background for space */
+        }
+        canvas {
+            display: block; /* Remove extra space below canvas */
+        }
+    </style>
+</head>
+<body>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/three.module.min.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        let scene, camera, renderer, controls;
+        const galaxies = []; // Array to hold all galaxy objects
+        let backgroundStars; // For the vast field of distant stars
+        let cosmicDust;      // For a subtle background nebula effect
+
+        // --- GLOBAL SIMULATION PARAMETERS ---
+        const numberOfGalaxies = 7;
+        const galaxySpacing = 1500; // Average distance between galaxy centers
+        const sceneExtent = 4000; // Defines the general boundary for galaxies and background elements
+        // --- END GLOBAL SIMULATION PARAMETERS ---
+
+
+        // --- GALAXY TEMPLATE PARAMETERS (used for each galaxy unless overridden) ---
+        const defaultParticleCount = 10000; // Particles per galaxy
+        const defaultGalaxyRadius = 300;
+        const defaultArmCount = 4;
+        const defaultArmSpread = 0.1;
+        const defaultArmTwist = 2.0;
+        const defaultCoreSize = 30;
+
+        const defaultSpiralTightness = 1.8;
+        const defaultArmOffset = 0.5;
+        const defaultThickness = 0.05;
+
+        const defaultBlackHoleRadius = 10;
+        const defaultBlackHoleInfluenceRadius = 50;
+        const defaultDevouringSpeed = 0.01;
+        const defaultDevouringProbability = 0.005;
+        const defaultMaxDevouringStars = 30;
+
+        // Accretion Disk Animation Parameters
+        const diskPulseSpeed = 0.05; // Speed of radius/opacity fluctuation
+        const diskPulseAmount = 0.2; // How much the disk pulses (relative to original size)
+        const diskRotationSpeed = 0.005; // Speed of disk rotation
+        // --- END GALAXY TEMPLATE PARAMETERS ---
+
+        // --- BACKGROUND PARAMETERS ---
+        const backgroundStarCount = 50000; // Number of tiny distant stars
+        const backgroundStarFieldSize = 7000; // How large the sphere of background stars is
+        const cosmicDustRadius = 6000;       // Radius for the subtle nebula/dust sphere
+        const cosmicDustColor = new THREE.Color(0x330055); // A faint purple hue
+        // --- END BACKGROUND PARAMETERS ---
+
+
+        // --- Galaxy Class/Constructor ---
+        function Galaxy(options = {}) {
+            this.id = Math.random().toString(36).substring(7); // Unique ID
+            this.position = options.position || new THREE.Vector3(0, 0, 0);
+
+            this.particleCount = options.particleCount || defaultParticleCount;
+            this.galaxyRadius = options.galaxyRadius || defaultGalaxyRadius;
+            this.armCount = options.armCount || defaultArmCount;
+            this.armSpread = options.armSpread || defaultArmSpread;
+            this.armTwist = options.armTwist || defaultArmTwist;
+            this.coreSize = options.coreSize || defaultCoreSize;
+
+            this.spiralTightness = options.spiralTightness || defaultSpiralTightness;
+            this.armOffset = options.armOffset || defaultArmOffset;
+            this.thickness = options.thickness || defaultThickness;
+
+            this.blackHoleRadius = options.blackHoleRadius || defaultBlackHoleRadius;
+            this.blackHoleInfluenceRadius = options.blackHoleInfluenceRadius || defaultBlackHoleInfluenceRadius;
+            this.devouringSpeed = options.devouringSpeed || defaultDevouringSpeed;
+            this.devouringProbability = options.devouringProbability || defaultDevouringProbability;
+            this.maxDevouringStars = options.maxDevouringStars || defaultMaxDevouringStars;
+
+            this.devouringStars = []; // Stars currently being devoured by this galaxy's black hole
+
+            this.colorCentral = options.colorCentral || new THREE.Color(0xFFEEAA);
+            this.colorOuter = options.colorOuter || new THREE.Color(0x88CCFF);
+            this.diskColor = options.diskColor || new THREE.Color(0xFF5500);
+
+            this.rotationSpeed = options.rotationSpeed || 0.0005; // Overall galaxy rotation
+
+            this.group = new THREE.Group(); // Parent group for all galaxy elements
+            this.group.position.copy(this.position);
+
+            this.particles = null;
+            this.blackHole = null;
+            this.accretionDisk = null;
+            this.blackHoleLight = null;
+            this.diskTimer = Math.random() * Math.PI * 2; // Unique timer for each disk animation
+
+            this.init = function() {
+                this.createGalaxyParticles();
+                this.createBlackHoleAndDisk();
+                scene.add(this.group);
+            };
+
+            this.createGalaxyParticles = function() {
+                const positions = new Float32Array(this.particleCount * 3);
+                const colors = new Float32Array(this.particleCount * 3);
+                const sizes = new Float32Array(this.particleCount);
+
+                for (let i = 0; i < this.particleCount; i++) {
+                    const armIndex = i % this.armCount;
+                    const armRotation = armIndex * (Math.PI * 2 / this.armCount);
+
+                    let distance = Math.pow(Math.random(), 3) * this.galaxyRadius;
+                    const angle = distance * this.spiralTightness + armRotation + (Math.random() - 0.5) * this.armOffset;
+
+                    let x = distance * Math.cos(angle);
+                    let z = distance * Math.sin(angle);
+                    let y = (Math.random() - 0.5) * distance * this.thickness;
+
+                    if (distance < this.coreSize) {
+                        const bulgeFactor = (this.coreSize - distance) / this.coreSize;
+                        y += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.7;
+                        x += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
+                        z += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
+                    }
+
+                    x += (Math.random() - 0.5) * 5;
+                    y += (Math.random() - 0.5) * 5;
+                    z += (Math.random() - 0.5) * 5;
+
+                    positions[i * 3] = x;
+                    positions[i * 3 + 1] = y;
+                    positions[i * 3 + 2] = z;
+
+                    const t = distance / this.galaxyRadius;
+                    const interpolatedColor = new THREE.Color().copy(this.colorCentral).lerp(this.colorOuter, t);
+                    colors[i * 3] = interpolatedColor.r;
+                    colors[i * 3 + 1] = interpolatedColor.g;
+                    colors[i * 3 + 2] = interpolatedColor.b;
+
+                    sizes[i] = (Math.random() * 0.8 + 0.2) * 2;
+                }
+
+                const geometry = new THREE.BufferGeometry();
+                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+                const material = new THREE.ShaderMaterial({
+                    uniforms: {
+                        color: { value: new THREE.Color(0xffffff) },
+                        pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') },
+                        cameraNear: { value: camera.near },
+                        cameraFar: { value: camera.far }
+                    },
+                    vertexShader: `
+                        attribute float size;
+                        attribute vec3 color;
+                        varying vec3 vColor;
+                        varying float vVisibility;
+                        uniform float cameraNear;
+                        uniform float cameraFar;
+
+                        void main() {
+                            vColor = color;
+                            vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+                            
+                            float pointSize = size * ( 300.0 / -mvPosition.z );
+                            gl_PointSize = min(pointSize, 10.0);
+
+                            gl_Position = projectionMatrix * mvPosition;
+
+                            float distFromNear = -mvPosition.z - cameraNear;
+                            float fadeStartDistance = 20.0;
+                            float fadeEndDistance = 0.0;
+                            vVisibility = smoothstep(fadeEndDistance, fadeStartDistance, distFromNear);
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform vec3 color;
+                        uniform sampler2D pointTexture;
+                        varying vec3 vColor;
+                        varying float vVisibility;
+
+                        void main() {
+                            gl_FragColor = vec4( vColor, vVisibility ) * texture2D( pointTexture, gl_PointCoord );
+                        }
+                    `,
+                    blending: THREE.AdditiveBlending,
+                    depthTest: false,
+                    transparent: true
+                });
+
+                this.particles = new THREE.Points(geometry, material);
+                this.group.add(this.particles);
+            };
+
+            this.createBlackHoleAndDisk = function() {
+                const bhGeometry = new THREE.SphereGeometry(this.blackHoleRadius, 64, 64);
+                const bhMaterial = new THREE.MeshBasicMaterial({
+                    color: 0x000000,
+                    transparent: true,
+                    opacity: 0.8
+                });
+                this.blackHole = new THREE.Mesh(bhGeometry, bhMaterial);
+                this.group.add(this.blackHole);
+
+                const diskInnerRadius = this.blackHoleRadius * 1.1;
+                const diskOuterRadius = this.blackHoleRadius * 3;
+                const diskThickness = 2;
+
+                const diskGeometry = new THREE.TorusGeometry(
+                    diskInnerRadius,
+                    diskThickness / 2,
+                    16,
+                    100,
+                    Math.PI * 2
+                );
+                this.accretionDisk = new THREE.Mesh(diskGeometry, new THREE.MeshBasicMaterial({
+                    color: this.diskColor,
+                    transparent: true,
+                    opacity: 0.6,
+                    side: THREE.DoubleSide,
+                    blending: THREE.AdditiveBlending
+                }));
+                this.accretionDisk.rotation.x = Math.PI / 2;
+                this.group.add(this.accretionDisk);
+
+                this.blackHoleLight = new THREE.PointLight(this.diskColor, 15, this.blackHoleRadius * 2);
+                this.group.add(this.blackHoleLight);
+            };
+
+            this.update = function() {
+                this.group.rotation.y += this.rotationSpeed;
+
+                // Accretion Disk Animation
+                this.diskTimer += diskPulseSpeed;
+                const pulseScale = 1.0 + Math.sin(this.diskTimer) * diskPulseAmount;
+                // Update radius directly or scale the mesh. Scaling is easier for torus.
+                this.accretionDisk.scale.set(pulseScale, pulseScale, pulseScale);
+                this.accretionDisk.material.opacity = 0.5 + (Math.sin(this.diskTimer * 0.5) * 0.2);
+                this.accretionDisk.rotation.z += diskRotationSpeed;
+
+                this.devourStars();
+            };
+
+            this.devourStars = function() {
+                const positionsAttribute = this.particles.geometry.attributes.position;
+                const currentPositions = positionsAttribute.array;
+
+                for (let i = this.devouringStars.length - 1; i >= 0; i--) {
+                    const starIndex = this.devouringStars[i];
+                    const px = currentPositions[starIndex * 3];
+                    const py = currentPositions[starIndex * 3 + 1];
+                    const pz = currentPositions[starIndex * 3 + 2];
+
+                    const direction = new THREE.Vector3(-px, -py, -pz).normalize();
+                    const currentDistance = new THREE.Vector3(px, py, pz).length();
+
+                    if (currentDistance > this.blackHoleRadius * 0.5) {
+                        currentPositions[starIndex * 3] += direction.x * this.devouringSpeed * currentDistance;
+                        currentPositions[starIndex * 3 + 1] += direction.y * this.devouringSpeed * currentDistance;
+                        currentPositions[starIndex * 3 + 2] += direction.z * this.devouringSpeed * currentDistance;
+                    } else {
+                        this.resetDevouredStar(starIndex);
+                        this.devouringStars.splice(i, 1);
+                    }
+                }
+
+                if (this.devouringStars.length < this.maxDevouringStars) {
+                    for (let i = 0; i < this.particleCount; i += Math.floor(this.particleCount / (this.maxDevouringStars * 5))) {
+                        if (this.devouringStars.includes(i)) continue;
+
+                        const px = currentPositions[i * 3];
+                        const py = currentPositions[i * 3 + 1];
+                        const pz = currentPositions[i * 3 + 2];
+
+                        const distanceToCenter = new THREE.Vector3(px, py, pz).length();
+
+                        if (distanceToCenter < this.blackHoleInfluenceRadius && Math.random() < this.devouringProbability) {
+                            this.devouringStars.push(i);
+                            if (this.devouringStars.length >= this.maxDevouringStars) break;
+                        }
+                    }
+                }
+                positionsAttribute.needsUpdate = true;
+            };
+
+            this.resetDevouredStar = function(index) {
+                const armIndex = Math.floor(Math.random() * this.armCount);
+                const armRotation = armIndex * (Math.PI * 2 / this.armCount);
+                let distance = Math.pow(Math.random(), 3) * this.galaxyRadius;
+                const angle = distance * this.spiralTightness + armRotation + (Math.random() - 0.5) * this.armOffset;
+
+                let x = distance * Math.cos(angle);
+                let z = distance * Math.sin(angle);
+                let y = (Math.random() - 0.5) * distance * this.thickness;
+
+                if (distance < this.coreSize) {
+                    const bulgeFactor = (this.coreSize - distance) / this.coreSize;
+                    y += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.7;
+                    x += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
+                    z += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
+                }
+
+                x += (Math.random() - 0.5) * 5;
+                y += (Math.random() - 0.5) * 5;
+                z += (Math.random() - 0.5) * 5;
+
+                const positionsAttribute = this.particles.geometry.attributes.position;
+                const currentPositions = positionsAttribute.array;
+
+                currentPositions[index * 3] = x;
+                currentPositions[index * 3 + 1] = y;
+                currentPositions[index * 3 + 2] = z;
+            };
+        }
+        // --- End Galaxy Class/Constructor ---
+
+
+        function init() {
+            // Scene
+            scene = new THREE.Scene();
+            // Fog makes distant objects fade, enhancing depth
+            scene.fog = new THREE.FogExp2(0x000000, 0.0001); // Adjusted for larger scene
+
+            // Camera
+            // Increased far plane for a larger scene with multiple galaxies and background
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
+            camera.position.set(0, 500, galaxySpacing * 2); // Initial camera position to encompass multiple galaxies
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            // Controls (3D Camera Movement)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.minDistance = 10;
+            controls.maxDistance = sceneExtent * 2; // Max zoom out to view the entire scene
+            controls.target.set(0,0,0); // Controls orbit around the center of the scene
+
+            // Create Multiple Galaxies (3D distribution)
+            createMultipleGalaxies();
+
+            // Create Background Stars
+            createBackgroundStars();
+
+            // Create Cosmic Dust/Nebula
+            createCosmicDust();
+
+            // Handle window resizing
+            window.addEventListener('resize', onWindowResize, false);
+
+            // Start animation loop
+            animate();
+        }
+
+        function createMultipleGalaxies() {
+            for (let i = 0; i < numberOfGalaxies; i++) {
+                // Random position for each galaxy within a larger cubic volume
+                const x = (Math.random() - 0.5) * sceneExtent;
+                const y = (Math.random() - 0.5) * sceneExtent; // Random Y for 3D distribution
+                const z = (Math.random() - 0.5) * sceneExtent;
+
+                const galaxyOptions = {
+                    position: new THREE.Vector3(x, y, z),
+                    // Varying parameters for different galaxies
+                    armCount: Math.round(2 + Math.random() * 3), // 2 to 5 arms
+                    rotationSpeed: (Math.random() * 0.0005) + 0.0002,
+                    colorCentral: new THREE.Color().setHSL(Math.random(), 0.8, 0.6),
+                    colorOuter: new THREE.Color().setHSL(Math.random(), 0.6, 0.4),
+                    diskColor: new THREE.Color().setHSL(Math.random(), 1.0, 0.5),
+                    galaxyRadius: defaultGalaxyRadius * (0.8 + Math.random() * 0.4),
+                    particleCount: Math.floor(defaultParticleCount * (0.8 + Math.random() * 0.4))
+                };
+
+                const newGalaxy = new Galaxy(galaxyOptions);
+                newGalaxy.init();
+                galaxies.push(newGalaxy);
+            }
+        }
+
+        function createBackgroundStars() {
+            const positions = new Float32Array(backgroundStarCount * 3);
+            const sizes = new Float32Array(backgroundStarCount);
+            const colors = new Float32Array(backgroundStarCount * 3); // Background stars can have subtle colors
+
+            for (let i = 0; i < backgroundStarCount; i++) {
+                // Distribute stars randomly within a sphere
+                const radius = Math.random() * backgroundStarFieldSize;
+                const theta = Math.random() * Math.PI * 2; // Around the Y-axis
+                const phi = Math.acos(Math.random() * 2 - 1); // Elevation from -PI/2 to PI/2
+
+                positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
+                positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
+                positions[i * 3 + 2] = radius * Math.cos(phi);
+
+                sizes[i] = (Math.random() * 0.5 + 0.5); // Smaller, less varied sizes for distant stars
+                
+                // Subtle random colors for background stars
+                const color = new THREE.Color().setHSL(Math.random(), 0.3, 0.8); // Less saturated, brighter
+                colors[i*3] = color.r;
+                colors[i*3+1] = color.g;
+                colors[i*3+2] = color.b;
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png') } // A different, perhaps softer, texture
+                },
+                vertexShader: `
+                    attribute float size;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    void main() {
+                        vColor = color;
+                        vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+                        gl_PointSize = size * ( 500.0 / -mvPosition.z ); // Adjusted scale
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D pointTexture;
+                    varying vec3 vColor;
+                    void main() {
+                        gl_FragColor = vec4( vColor, 1.0 ) * texture2D( pointTexture, gl_PointCoord );
+                    }
+                `,
+                blending: THREE.AdditiveBlending,
+                depthTest: false,
+                transparent: true
+            });
+
+            backgroundStars = new THREE.Points(geometry, material);
+            scene.add(backgroundStars);
+        }
+
+        function createCosmicDust() {
+            const geometry = new THREE.SphereGeometry(cosmicDustRadius, 32, 32);
+            const material = new THREE.MeshBasicMaterial({
+                color: cosmicDustColor,
+                transparent: true,
+                opacity: 0.05, // Very subtle
+                side: THREE.BackSide, // Render from the inside
+                blending: THREE.AdditiveBlending
+            });
+            cosmicDust = new THREE.Mesh(geometry, material);
+            scene.add(cosmicDust);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            controls.update();
+
+            // Update each galaxy
+            galaxies.forEach(galaxy => {
+                galaxy.update();
+            });
+
+            // Make background stars slowly drift
+            if(backgroundStars) {
+                backgroundStars.rotation.y += 0.00002; // Very slow drift
+                backgroundStars.rotation.x += 0.00001;
+            }
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        // Initialize the scene when the window loads
+        window.onload = init;
+    </script>
+</body>
+</html>
