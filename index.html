@@ -2,16 +2,17 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mini galaxy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Universal Galaxy Experience</title>
     <style>
         body {
             margin: 0;
-            overflow: hidden; /* Hide scrollbars */
-            background-color: #000; /* Black background for space */
+            overflow: hidden;
+            background-color: #000;
         }
         canvas {
-            display: block; /* Remove extra space below canvas */
+            display: block;
+            touch-action: none; /* Prevent browser from handling touch gestures */
         }
     </style>
 </head>
@@ -30,19 +31,17 @@
         import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
         let scene, camera, renderer, controls;
-        const galaxies = []; // Array to hold all galaxy objects
-        let backgroundStars; // For the vast field of distant stars
-        let cosmicDust;      // For a subtle background nebula effect
+        const galaxies = [];
+        let backgroundStars;
+        const cosmicDustLayers = [];
 
-        // --- GLOBAL SIMULATION PARAMETERS ---
-        const numberOfGalaxies = 7;
-        const galaxySpacing = 1500; // Average distance between galaxy centers
-        const sceneExtent = 4000; // Defines the general boundary for galaxies and background elements
-        // --- END GLOBAL SIMULATION PARAMETERS ---
+        // --- GLOBAL SIMULATION PARAMETERS (Balanced for Laptop and Mobile) ---
+        const numberOfGalaxies = 7; // Slightly increased from mobile, balanced
+        const sceneExtent = 8000;
+        const galaxyDistributionPadding = 1500;
 
-
-        // --- GALAXY TEMPLATE PARAMETERS (used for each galaxy unless overridden) ---
-        const defaultParticleCount = 10000; // Particles per galaxy
+        // --- GALAXY TEMPLATE PARAMETERS (Balanced for Laptop and Mobile) ---
+        const defaultParticleCount = 4000; // Increased for better laptop visuals, but not too high for mobile
         const defaultGalaxyRadius = 300;
         const defaultArmCount = 4;
         const defaultArmSpread = 0.1;
@@ -59,23 +58,30 @@
         const defaultDevouringProbability = 0.005;
         const defaultMaxDevouringStars = 30;
 
-        // Accretion Disk Animation Parameters
-        const diskPulseSpeed = 0.05; // Speed of radius/opacity fluctuation
-        const diskPulseAmount = 0.2; // How much the disk pulses (relative to original size)
-        const diskRotationSpeed = 0.005; // Speed of disk rotation
+        const diskPulseSpeed = 0.05;
+        const diskPulseAmount = 0.2;
+        const diskRotationSpeed = 0.005;
         // --- END GALAXY TEMPLATE PARAMETERS ---
 
-        // --- BACKGROUND PARAMETERS ---
-        const backgroundStarCount = 50000; // Number of tiny distant stars
-        const backgroundStarFieldSize = 7000; // How large the sphere of background stars is
-        const cosmicDustRadius = 6000;       // Radius for the subtle nebula/dust sphere
-        const cosmicDustColor = new THREE.Color(0x330055); // A faint purple hue
+        // --- BACKGROUND PARAMETERS (Balanced for Laptop and Mobile) ---
+        const backgroundStarCount = 200000; // Increased for better laptop background, still manageable for mobile
+        const backgroundStarFieldSize = 20000;
+        const backgroundStarMinSize = 0.5;
+        const backgroundStarMaxSize = 2.0;
+        const backgroundStarTwinkleSpeed = 0.005;
+
+        const nebulaLayersData = [
+            { radius: 10000, color: 0x110033, opacity: 0.05, rotationSpeed: 0.00005 },
+            { radius: 12000, color: 0x001133, opacity: 0.04, rotationSpeed: 0.00003 },
+            { radius: 15000, color: 0x002222, opacity: 0.02, rotationSpeed: 0.00002 },
+            { radius: 18000, color: 0x001111, opacity: 0.01, rotationSpeed: 0.00001 } // Added back a layer
+        ];
         // --- END BACKGROUND PARAMETERS ---
 
 
         // --- Galaxy Class/Constructor ---
         function Galaxy(options = {}) {
-            this.id = Math.random().toString(36).substring(7); // Unique ID
+            this.id = Math.random().toString(36).substring(7);
             this.position = options.position || new THREE.Vector3(0, 0, 0);
 
             this.particleCount = options.particleCount || defaultParticleCount;
@@ -95,22 +101,22 @@
             this.devouringProbability = options.devouringProbability || defaultDevouringProbability;
             this.maxDevouringStars = options.maxDevouringStars || defaultMaxDevouringStars;
 
-            this.devouringStars = []; // Stars currently being devoured by this galaxy's black hole
+            this.devouringStars = [];
 
             this.colorCentral = options.colorCentral || new THREE.Color(0xFFEEAA);
             this.colorOuter = options.colorOuter || new THREE.Color(0x88CCFF);
             this.diskColor = options.diskColor || new THREE.Color(0xFF5500);
 
-            this.rotationSpeed = options.rotationSpeed || 0.0005; // Overall galaxy rotation
+            this.rotationSpeed = options.rotationSpeed || 0.0005;
 
-            this.group = new THREE.Group(); // Parent group for all galaxy elements
+            this.group = new THREE.Group();
             this.group.position.copy(this.position);
 
             this.particles = null;
             this.blackHole = null;
             this.accretionDisk = null;
             this.blackHoleLight = null;
-            this.diskTimer = Math.random() * Math.PI * 2; // Unique timer for each disk animation
+            this.diskTimer = Math.random() * Math.PI * 2;
 
             this.init = function() {
                 this.createGalaxyParticles();
@@ -166,7 +172,7 @@
                 const material = new THREE.ShaderMaterial({
                     uniforms: {
                         color: { value: new THREE.Color(0xffffff) },
-                        pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/disc.png') },
+                        pointTexture: { value: new THREE.TextureLoader().load('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/examples/textures/sprites/disc.png') },
                         cameraNear: { value: camera.near },
                         cameraFar: { value: camera.far }
                     },
@@ -182,9 +188,10 @@
                             vColor = color;
                             vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
                             
-                            float pointSize = size * ( 300.0 / -mvPosition.z );
-                            gl_PointSize = min(pointSize, 10.0);
-
+                            // Adjust point size for varying DPI
+                            float pointSize = size * ( 300.0 / -mvPosition.z ); // Base size for laptops
+                            gl_PointSize = max(1.5, min(pointSize, 10.0)); // Ensure min size for visibility, clamp max
+                            
                             gl_Position = projectionMatrix * mvPosition;
 
                             float distFromNear = -mvPosition.z - cameraNear;
@@ -213,7 +220,7 @@
             };
 
             this.createBlackHoleAndDisk = function() {
-                const bhGeometry = new THREE.SphereGeometry(this.blackHoleRadius, 64, 64);
+                const bhGeometry = new THREE.SphereGeometry(this.blackHoleRadius, 32, 32); // Balanced segments
                 const bhMaterial = new THREE.MeshBasicMaterial({
                     color: 0x000000,
                     transparent: true,
@@ -229,8 +236,8 @@
                 const diskGeometry = new THREE.TorusGeometry(
                     diskInnerRadius,
                     diskThickness / 2,
-                    16,
-                    100,
+                    12, // Balanced radial segments
+                    60, // Balanced tubular segments
                     Math.PI * 2
                 );
                 this.accretionDisk = new THREE.Mesh(diskGeometry, new THREE.MeshBasicMaterial({
@@ -250,10 +257,8 @@
             this.update = function() {
                 this.group.rotation.y += this.rotationSpeed;
 
-                // Accretion Disk Animation
                 this.diskTimer += diskPulseSpeed;
                 const pulseScale = 1.0 + Math.sin(this.diskTimer) * diskPulseAmount;
-                // Update radius directly or scale the mesh. Scaling is easier for torus.
                 this.accretionDisk.scale.set(pulseScale, pulseScale, pulseScale);
                 this.accretionDisk.material.opacity = 0.5 + (Math.sin(this.diskTimer * 0.5) * 0.2);
                 this.accretionDisk.rotation.z += diskRotationSpeed;
@@ -338,54 +343,74 @@
         function init() {
             // Scene
             scene = new THREE.Scene();
-            // Fog makes distant objects fade, enhancing depth
-            scene.fog = new THREE.FogExp2(0x000000, 0.0001); // Adjusted for larger scene
+            scene.fog = new THREE.FogExp2(0x000000, 0.00002); // Standard fog
 
             // Camera
-            // Increased far plane for a larger scene with multiple galaxies and background
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000);
-            camera.position.set(0, 500, galaxySpacing * 2); // Initial camera position to encompass multiple galaxies
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 30000); // Back to larger far clip
+            camera.position.set(0, sceneExtent * 0.9, sceneExtent * 2.5); // Initial position as before
+            camera.lookAt(0,0,0);
 
             // Renderer
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer = new THREE.WebGLRenderer({
+                antialias: true,
+                powerPreference: 'high-performance'
+            });
+            // CRITICAL CHANGE FOR LAPTOP VISIBILITY:
+            renderer.setPixelRatio(window.devicePixelRatio); // Use device's pixel ratio (default for Three.js, good for laptops)
+            // You can adjust this for performance: `Math.min(2, window.devicePixelRatio)` or `1.5`
             renderer.setSize(window.innerWidth, window.innerHeight);
             document.body.appendChild(renderer.domElement);
 
-            // Controls (3D Camera Movement)
+            // Controls
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
-            controls.dampingFactor = 0.05;
+            controls.dampingFactor = 0.05; // Standard damping
             controls.minDistance = 10;
-            controls.maxDistance = sceneExtent * 2; // Max zoom out to view the entire scene
-            controls.target.set(0,0,0); // Controls orbit around the center of the scene
+            controls.maxDistance = backgroundStarFieldSize * 0.9;
 
-            // Create Multiple Galaxies (3D distribution)
+            // Touch-specific controls for OrbitControls (remain for mobile)
+            controls.touches = {
+                ONE: THREE.TouchID.ROTATE,
+                TWO: THREE.TouchID.DOLLY,
+                THREE: THREE.TouchID.PAN
+            };
+            controls.zoomSpeed = 1.0;
+            controls.rotateSpeed = 1.0;
+            controls.panSpeed = 1.0;
+
+            // Dynamic controls.target for "fly-through" zooming
+            const updateControlsTarget = () => {
+                const targetOffset = 1000; // Original target offset
+                const cameraDirection = new THREE.Vector3();
+                camera.getWorldDirection(cameraDirection);
+                controls.target.copy(camera.position).add(cameraDirection.multiplyScalar(targetOffset));
+            };
+            updateControlsTarget();
+            controls.addEventListener('change', updateControlsTarget);
+
+            // Create Multiple Galaxies
             createMultipleGalaxies();
 
             // Create Background Stars
             createBackgroundStars();
 
-            // Create Cosmic Dust/Nebula
-            createCosmicDust();
+            // Create Cosmic Dust/Nebula layers
+            createCosmicDustLayers();
 
-            // Handle window resizing
             window.addEventListener('resize', onWindowResize, false);
 
-            // Start animation loop
             animate();
         }
 
         function createMultipleGalaxies() {
             for (let i = 0; i < numberOfGalaxies; i++) {
-                // Random position for each galaxy within a larger cubic volume
-                const x = (Math.random() - 0.5) * sceneExtent;
-                const y = (Math.random() - 0.5) * sceneExtent; // Random Y for 3D distribution
-                const z = (Math.random() - 0.5) * sceneExtent;
+                const x = (Math.random() - 0.5) * (sceneExtent - galaxyDistributionPadding * 2);
+                const y = (Math.random() - 0.5) * (sceneExtent - galaxyDistributionPadding * 2);
+                const z = (Math.random() - 0.5) * (sceneExtent - galaxyDistributionPadding * 2);
 
                 const galaxyOptions = {
                     position: new THREE.Vector3(x, y, z),
-                    // Varying parameters for different galaxies
-                    armCount: Math.round(2 + Math.random() * 3), // 2 to 5 arms
+                    armCount: Math.round(2 + Math.random() * 3),
                     rotationSpeed: (Math.random() * 0.0005) + 0.0002,
                     colorCentral: new THREE.Color().setHSL(Math.random(), 0.8, 0.6),
                     colorOuter: new THREE.Color().setHSL(Math.random(), 0.6, 0.4),
@@ -403,53 +428,49 @@
         function createBackgroundStars() {
             const positions = new Float32Array(backgroundStarCount * 3);
             const sizes = new Float32Array(backgroundStarCount);
-            const colors = new Float32Array(backgroundStarCount * 3); // Background stars can have subtle colors
+            const opacities = new Float32Array(backgroundStarCount);
 
             for (let i = 0; i < backgroundStarCount; i++) {
-                // Distribute stars randomly within a sphere
-                const radius = Math.random() * backgroundStarFieldSize;
-                const theta = Math.random() * Math.PI * 2; // Around the Y-axis
-                const phi = Math.acos(Math.random() * 2 - 1); // Elevation from -PI/2 to PI/2
+                const radius = (Math.pow(Math.random(), 2) * 0.5 + 0.5) * backgroundStarFieldSize;
+                const theta = Math.random() * Math.PI * 2;
+                const phi = Math.acos(Math.random() * 2 - 1);
 
                 positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
                 positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
                 positions[i * 3 + 2] = radius * Math.cos(phi);
 
-                sizes[i] = (Math.random() * 0.5 + 0.5); // Smaller, less varied sizes for distant stars
-                
-                // Subtle random colors for background stars
-                const color = new THREE.Color().setHSL(Math.random(), 0.3, 0.8); // Less saturated, brighter
-                colors[i*3] = color.r;
-                colors[i*3+1] = color.g;
-                colors[i*3+2] = color.b;
+                sizes[i] = backgroundStarMinSize + Math.random() * (backgroundStarMaxSize - backgroundStarMinSize);
+                opacities[i] = 0.5 + Math.random() * 0.5;
             }
 
             const geometry = new THREE.BufferGeometry();
             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
             geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
+            geometry.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
 
             const material = new THREE.ShaderMaterial({
                 uniforms: {
-                    pointTexture: { value: new THREE.TextureLoader().load('https://threejs.org/examples/textures/sprites/spark1.png') } // A different, perhaps softer, texture
+                    pointTexture: { value: new THREE.TextureLoader().load('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/examples/textures/sprites/spark1.png') },
+                    time: { value: 0.0 }
                 },
                 vertexShader: `
                     attribute float size;
-                    attribute vec3 color;
-                    varying vec3 vColor;
+                    attribute float opacity;
+                    varying float vOpacity;
+                    uniform float time;
+
                     void main() {
-                        vColor = color;
+                        vOpacity = opacity * (0.7 + sin(position.x * 0.1 + time * ${backgroundStarTwinkleSpeed}) * 0.3);
                         vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-                        gl_PointSize = size * ( 500.0 / -mvPosition.z ); // Adjusted scale
+                        gl_PointSize = size * ( 200.0 / -mvPosition.z ); // Base size for laptops
                         gl_Position = projectionMatrix * mvPosition;
                     }
                 `,
                 fragmentShader: `
                     uniform sampler2D pointTexture;
-                    varying vec3 vColor;
+                    varying float vOpacity;
                     void main() {
-                        gl_FragColor = vec4( vColor, 1.0 ) * texture2D( pointTexture, gl_PointCoord );
+                        gl_FragColor = vec4( 1.0, 1.0, 1.0, vOpacity ) * texture2D( pointTexture, gl_PointCoord );
                     }
                 `,
                 blending: THREE.AdditiveBlending,
@@ -461,34 +482,42 @@
             scene.add(backgroundStars);
         }
 
-        function createCosmicDust() {
-            const geometry = new THREE.SphereGeometry(cosmicDustRadius, 32, 32);
-            const material = new THREE.MeshBasicMaterial({
-                color: cosmicDustColor,
-                transparent: true,
-                opacity: 0.05, // Very subtle
-                side: THREE.BackSide, // Render from the inside
-                blending: THREE.AdditiveBlending
+        function createCosmicDustLayers() {
+            nebulaLayersData.forEach(layer => {
+                const geometry = new THREE.SphereGeometry(layer.radius, 32, 32); // Balanced segments
+                const material = new THREE.MeshBasicMaterial({
+                    color: layer.color,
+                    transparent: true,
+                    opacity: layer.opacity,
+                    side: THREE.BackSide,
+                    blending: THREE.AdditiveBlending
+                });
+                const dustMesh = new THREE.Mesh(geometry, material);
+                dustMesh.rotationSpeed = layer.rotationSpeed;
+                cosmicDustLayers.push(dustMesh);
+                scene.add(dustMesh);
             });
-            cosmicDust = new THREE.Mesh(geometry, material);
-            scene.add(cosmicDust);
         }
 
         function animate() {
             requestAnimationFrame(animate);
 
             controls.update();
-
-            // Update each galaxy
+            
             galaxies.forEach(galaxy => {
                 galaxy.update();
             });
 
-            // Make background stars slowly drift
             if(backgroundStars) {
-                backgroundStars.rotation.y += 0.00002; // Very slow drift
-                backgroundStars.rotation.x += 0.00001;
+                backgroundStars.material.uniforms.time.value += 1;
+                backgroundStars.rotation.y += 0.000005;
+                backgroundStars.rotation.x += 0.000002;
             }
+            
+            cosmicDustLayers.forEach(layer => {
+                layer.rotation.y += layer.rotationSpeed;
+                layer.rotation.x += layer.rotationSpeed * 0.5;
+            });
 
             renderer.render(scene, camera);
         }
@@ -499,7 +528,6 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // Initialize the scene when the window loads
         window.onload = init;
     </script>
 </body>
