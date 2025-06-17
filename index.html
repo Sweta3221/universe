@@ -2,533 +2,486 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Universal Galaxy Experience</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Universe Simulation</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body {
             margin: 0;
             overflow: hidden;
+            font-family: 'Inter', sans-serif;
             background-color: #000;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
         }
         canvas {
             display: block;
-            touch-action: none; /* Prevent browser from handling touch gestures */
+            background-color: #000; /* Ensure black background for space */
+            border-radius: 10px;
+        }
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            font-size: 2em;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        .spinner {
+            border: 8px solid rgba(255, 255, 255, 0.3);
+            border-top: 8px solid #fff;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 20px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
-    <script type="importmap">
-        {
-            "imports": {
-                "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/three.module.min.js",
-                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/"
-            }
-        }
-    </script>
+    <div id="loading-overlay">
+        <div class="spinner"></div>
+        Loading Universe...
+    </div>
 
-    <script type="module">
-        import * as THREE from 'three';
-        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Check if the window is fully loaded before initializing Three.js
+        window.onload = function() {
+            // Hide the loading overlay once the window is loaded
+            const loadingOverlay = document.getElementById('loading-overlay');
+            loadingOverlay.style.display = 'none';
 
-        let scene, camera, renderer, controls;
-        const galaxies = [];
-        let backgroundStars;
-        const cosmicDustLayers = [];
+            // --- Scene Setup ---
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000000); // Deep space background
 
-        // --- GLOBAL SIMULATION PARAMETERS (Balanced for Laptop and Mobile) ---
-        const numberOfGalaxies = 7; // Slightly increased from mobile, balanced
-        const sceneExtent = 8000;
-        const galaxyDistributionPadding = 1500;
+            // --- Camera Setup ---
+            // Increased 'far' clipping plane to see stars when zoomed out
+            const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10000); // Much larger far clip
+            camera.position.set(0, 50, 1500); // Initial camera position, further back for a wider view
+            camera.lookAt(0, 0, 0); // Always look at the center of the scene
 
-        // --- GALAXY TEMPLATE PARAMETERS (Balanced for Laptop and Mobile) ---
-        const defaultParticleCount = 4000; // Increased for better laptop visuals, but not too high for mobile
-        const defaultGalaxyRadius = 300;
-        const defaultArmCount = 4;
-        const defaultArmSpread = 0.1;
-        const defaultArmTwist = 2.0;
-        const defaultCoreSize = 30;
-
-        const defaultSpiralTightness = 1.8;
-        const defaultArmOffset = 0.5;
-        const defaultThickness = 0.05;
-
-        const defaultBlackHoleRadius = 10;
-        const defaultBlackHoleInfluenceRadius = 50;
-        const defaultDevouringSpeed = 0.01;
-        const defaultDevouringProbability = 0.005;
-        const defaultMaxDevouringStars = 30;
-
-        const diskPulseSpeed = 0.05;
-        const diskPulseAmount = 0.2;
-        const diskRotationSpeed = 0.005;
-        // --- END GALAXY TEMPLATE PARAMETERS ---
-
-        // --- BACKGROUND PARAMETERS (Balanced for Laptop and Mobile) ---
-        const backgroundStarCount = 200000; // Increased for better laptop background, still manageable for mobile
-        const backgroundStarFieldSize = 20000;
-        const backgroundStarMinSize = 0.5;
-        const backgroundStarMaxSize = 2.0;
-        const backgroundStarTwinkleSpeed = 0.005;
-
-        const nebulaLayersData = [
-            { radius: 10000, color: 0x110033, opacity: 0.05, rotationSpeed: 0.00005 },
-            { radius: 12000, color: 0x001133, opacity: 0.04, rotationSpeed: 0.00003 },
-            { radius: 15000, color: 0x002222, opacity: 0.02, rotationSpeed: 0.00002 },
-            { radius: 18000, color: 0x001111, opacity: 0.01, rotationSpeed: 0.00001 } // Added back a layer
-        ];
-        // --- END BACKGROUND PARAMETERS ---
-
-
-        // --- Galaxy Class/Constructor ---
-        function Galaxy(options = {}) {
-            this.id = Math.random().toString(36).substring(7);
-            this.position = options.position || new THREE.Vector3(0, 0, 0);
-
-            this.particleCount = options.particleCount || defaultParticleCount;
-            this.galaxyRadius = options.galaxyRadius || defaultGalaxyRadius;
-            this.armCount = options.armCount || defaultArmCount;
-            this.armSpread = options.armSpread || defaultArmSpread;
-            this.armTwist = options.armTwist || defaultArmTwist;
-            this.coreSize = options.coreSize || defaultCoreSize;
-
-            this.spiralTightness = options.spiralTightness || defaultSpiralTightness;
-            this.armOffset = options.armOffset || defaultArmOffset;
-            this.thickness = options.thickness || defaultThickness;
-
-            this.blackHoleRadius = options.blackHoleRadius || defaultBlackHoleRadius;
-            this.blackHoleInfluenceRadius = options.blackHoleInfluenceRadius || defaultBlackHoleInfluenceRadius;
-            this.devouringSpeed = options.devouringSpeed || defaultDevouringSpeed;
-            this.devouringProbability = options.devouringProbability || defaultDevouringProbability;
-            this.maxDevouringStars = options.maxDevouringStars || defaultMaxDevouringStars;
-
-            this.devouringStars = [];
-
-            this.colorCentral = options.colorCentral || new THREE.Color(0xFFEEAA);
-            this.colorOuter = options.colorOuter || new THREE.Color(0x88CCFF);
-            this.diskColor = options.diskColor || new THREE.Color(0xFF5500);
-
-            this.rotationSpeed = options.rotationSpeed || 0.0005;
-
-            this.group = new THREE.Group();
-            this.group.position.copy(this.position);
-
-            this.particles = null;
-            this.blackHole = null;
-            this.accretionDisk = null;
-            this.blackHoleLight = null;
-            this.diskTimer = Math.random() * Math.PI * 2;
-
-            this.init = function() {
-                this.createGalaxyParticles();
-                this.createBlackHoleAndDisk();
-                scene.add(this.group);
-            };
-
-            this.createGalaxyParticles = function() {
-                const positions = new Float32Array(this.particleCount * 3);
-                const colors = new Float32Array(this.particleCount * 3);
-                const sizes = new Float32Array(this.particleCount);
-
-                for (let i = 0; i < this.particleCount; i++) {
-                    const armIndex = i % this.armCount;
-                    const armRotation = armIndex * (Math.PI * 2 / this.armCount);
-
-                    let distance = Math.pow(Math.random(), 3) * this.galaxyRadius;
-                    const angle = distance * this.spiralTightness + armRotation + (Math.random() - 0.5) * this.armOffset;
-
-                    let x = distance * Math.cos(angle);
-                    let z = distance * Math.sin(angle);
-                    let y = (Math.random() - 0.5) * distance * this.thickness;
-
-                    if (distance < this.coreSize) {
-                        const bulgeFactor = (this.coreSize - distance) / this.coreSize;
-                        y += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.7;
-                        x += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
-                        z += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
-                    }
-
-                    x += (Math.random() - 0.5) * 5;
-                    y += (Math.random() - 0.5) * 5;
-                    z += (Math.random() - 0.5) * 5;
-
-                    positions[i * 3] = x;
-                    positions[i * 3 + 1] = y;
-                    positions[i * 3 + 2] = z;
-
-                    const t = distance / this.galaxyRadius;
-                    const interpolatedColor = new THREE.Color().copy(this.colorCentral).lerp(this.colorOuter, t);
-                    colors[i * 3] = interpolatedColor.r;
-                    colors[i * 3 + 1] = interpolatedColor.g;
-                    colors[i * 3 + 2] = interpolatedColor.b;
-
-                    sizes[i] = (Math.random() * 0.8 + 0.2) * 2;
-                }
-
-                const geometry = new THREE.BufferGeometry();
-                geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-                geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-                geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-
-                const material = new THREE.ShaderMaterial({
-                    uniforms: {
-                        color: { value: new THREE.Color(0xffffff) },
-                        pointTexture: { value: new THREE.TextureLoader().load('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/examples/textures/sprites/disc.png') },
-                        cameraNear: { value: camera.near },
-                        cameraFar: { value: camera.far }
-                    },
-                    vertexShader: `
-                        attribute float size;
-                        attribute vec3 color;
-                        varying vec3 vColor;
-                        varying float vVisibility;
-                        uniform float cameraNear;
-                        uniform float cameraFar;
-
-                        void main() {
-                            vColor = color;
-                            vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-                            
-                            // Adjust point size for varying DPI
-                            float pointSize = size * ( 300.0 / -mvPosition.z ); // Base size for laptops
-                            gl_PointSize = max(1.5, min(pointSize, 10.0)); // Ensure min size for visibility, clamp max
-                            
-                            gl_Position = projectionMatrix * mvPosition;
-
-                            float distFromNear = -mvPosition.z - cameraNear;
-                            float fadeStartDistance = 20.0;
-                            float fadeEndDistance = 0.0;
-                            vVisibility = smoothstep(fadeEndDistance, fadeStartDistance, distFromNear);
-                        }
-                    `,
-                    fragmentShader: `
-                        uniform vec3 color;
-                        uniform sampler2D pointTexture;
-                        varying vec3 vColor;
-                        varying float vVisibility;
-
-                        void main() {
-                            gl_FragColor = vec4( vColor, vVisibility ) * texture2D( pointTexture, gl_PointCoord );
-                        }
-                    `,
-                    blending: THREE.AdditiveBlending,
-                    depthTest: false,
-                    transparent: true
-                });
-
-                this.particles = new THREE.Points(geometry, material);
-                this.group.add(this.particles);
-            };
-
-            this.createBlackHoleAndDisk = function() {
-                const bhGeometry = new THREE.SphereGeometry(this.blackHoleRadius, 32, 32); // Balanced segments
-                const bhMaterial = new THREE.MeshBasicMaterial({
-                    color: 0x000000,
-                    transparent: true,
-                    opacity: 0.8
-                });
-                this.blackHole = new THREE.Mesh(bhGeometry, bhMaterial);
-                this.group.add(this.blackHole);
-
-                const diskInnerRadius = this.blackHoleRadius * 1.1;
-                const diskOuterRadius = this.blackHoleRadius * 3;
-                const diskThickness = 2;
-
-                const diskGeometry = new THREE.TorusGeometry(
-                    diskInnerRadius,
-                    diskThickness / 2,
-                    12, // Balanced radial segments
-                    60, // Balanced tubular segments
-                    Math.PI * 2
-                );
-                this.accretionDisk = new THREE.Mesh(diskGeometry, new THREE.MeshBasicMaterial({
-                    color: this.diskColor,
-                    transparent: true,
-                    opacity: 0.6,
-                    side: THREE.DoubleSide,
-                    blending: THREE.AdditiveBlending
-                }));
-                this.accretionDisk.rotation.x = Math.PI / 2;
-                this.group.add(this.accretionDisk);
-
-                this.blackHoleLight = new THREE.PointLight(this.diskColor, 15, this.blackHoleRadius * 2);
-                this.group.add(this.blackHoleLight);
-            };
-
-            this.update = function() {
-                this.group.rotation.y += this.rotationSpeed;
-
-                this.diskTimer += diskPulseSpeed;
-                const pulseScale = 1.0 + Math.sin(this.diskTimer) * diskPulseAmount;
-                this.accretionDisk.scale.set(pulseScale, pulseScale, pulseScale);
-                this.accretionDisk.material.opacity = 0.5 + (Math.sin(this.diskTimer * 0.5) * 0.2);
-                this.accretionDisk.rotation.z += diskRotationSpeed;
-
-                this.devourStars();
-            };
-
-            this.devourStars = function() {
-                const positionsAttribute = this.particles.geometry.attributes.position;
-                const currentPositions = positionsAttribute.array;
-
-                for (let i = this.devouringStars.length - 1; i >= 0; i--) {
-                    const starIndex = this.devouringStars[i];
-                    const px = currentPositions[starIndex * 3];
-                    const py = currentPositions[starIndex * 3 + 1];
-                    const pz = currentPositions[starIndex * 3 + 2];
-
-                    const direction = new THREE.Vector3(-px, -py, -pz).normalize();
-                    const currentDistance = new THREE.Vector3(px, py, pz).length();
-
-                    if (currentDistance > this.blackHoleRadius * 0.5) {
-                        currentPositions[starIndex * 3] += direction.x * this.devouringSpeed * currentDistance;
-                        currentPositions[starIndex * 3 + 1] += direction.y * this.devouringSpeed * currentDistance;
-                        currentPositions[starIndex * 3 + 2] += direction.z * this.devouringSpeed * currentDistance;
-                    } else {
-                        this.resetDevouredStar(starIndex);
-                        this.devouringStars.splice(i, 1);
-                    }
-                }
-
-                if (this.devouringStars.length < this.maxDevouringStars) {
-                    for (let i = 0; i < this.particleCount; i += Math.floor(this.particleCount / (this.maxDevouringStars * 5))) {
-                        if (this.devouringStars.includes(i)) continue;
-
-                        const px = currentPositions[i * 3];
-                        const py = currentPositions[i * 3 + 1];
-                        const pz = currentPositions[i * 3 + 2];
-
-                        const distanceToCenter = new THREE.Vector3(px, py, pz).length();
-
-                        if (distanceToCenter < this.blackHoleInfluenceRadius && Math.random() < this.devouringProbability) {
-                            this.devouringStars.push(i);
-                            if (this.devouringStars.length >= this.maxDevouringStars) break;
-                        }
-                    }
-                }
-                positionsAttribute.needsUpdate = true;
-            };
-
-            this.resetDevouredStar = function(index) {
-                const armIndex = Math.floor(Math.random() * this.armCount);
-                const armRotation = armIndex * (Math.PI * 2 / this.armCount);
-                let distance = Math.pow(Math.random(), 3) * this.galaxyRadius;
-                const angle = distance * this.spiralTightness + armRotation + (Math.random() - 0.5) * this.armOffset;
-
-                let x = distance * Math.cos(angle);
-                let z = distance * Math.sin(angle);
-                let y = (Math.random() - 0.5) * distance * this.thickness;
-
-                if (distance < this.coreSize) {
-                    const bulgeFactor = (this.coreSize - distance) / this.coreSize;
-                    y += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.7;
-                    x += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
-                    z += (Math.random() - 0.5) * bulgeFactor * this.coreSize * 0.3;
-                }
-
-                x += (Math.random() - 0.5) * 5;
-                y += (Math.random() - 0.5) * 5;
-                z += (Math.random() - 0.5) * 5;
-
-                const positionsAttribute = this.particles.geometry.attributes.position;
-                const currentPositions = positionsAttribute.array;
-
-                currentPositions[index * 3] = x;
-                currentPositions[index * 3 + 1] = y;
-                currentPositions[index * 3 + 2] = z;
-            };
-        }
-        // --- End Galaxy Class/Constructor ---
-
-
-        function init() {
-            // Scene
-            scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x000000, 0.00002); // Standard fog
-
-            // Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 30000); // Back to larger far clip
-            camera.position.set(0, sceneExtent * 0.9, sceneExtent * 2.5); // Initial position as before
-            camera.lookAt(0,0,0);
-
-            // Renderer
-            renderer = new THREE.WebGLRenderer({
-                antialias: true,
-                powerPreference: 'high-performance'
-            });
-            // CRITICAL CHANGE FOR LAPTOP VISIBILITY:
-            renderer.setPixelRatio(window.devicePixelRatio); // Use device's pixel ratio (default for Three.js, good for laptops)
-            // You can adjust this for performance: `Math.min(2, window.devicePixelRatio)` or `1.5`
+            // --- Renderer Setup ---
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            // Controls
-            controls = new OrbitControls(camera, renderer.domElement);
-            controls.enableDamping = true;
-            controls.dampingFactor = 0.05; // Standard damping
-            controls.minDistance = 10;
-            controls.maxDistance = backgroundStarFieldSize * 0.9;
+            // --- Lighting ---
+            const ambientLight = new THREE.AmbientLight(0x404040); // Soft ambient light
+            scene.add(ambientLight);
 
-            // Touch-specific controls for OrbitControls (remain for mobile)
-            controls.touches = {
-                ONE: THREE.TouchID.ROTATE,
-                TWO: THREE.TouchID.DOLLY,
-                THREE: THREE.TouchID.PAN
-            };
-            controls.zoomSpeed = 1.0;
-            controls.rotateSpeed = 1.0;
-            controls.panSpeed = 1.0;
+            // A more general directional light to illuminate the diverse systems
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            directionalLight.position.set(1000, 500, 1000).normalize(); // Position further out for a larger scene
+            scene.add(directionalLight);
 
-            // Dynamic controls.target for "fly-through" zooming
-            const updateControlsTarget = () => {
-                const targetOffset = 1000; // Original target offset
-                const cameraDirection = new THREE.Vector3();
-                camera.getWorldDirection(cameraDirection);
-                controls.target.copy(camera.position).add(cameraDirection.multiplyScalar(targetOffset));
-            };
-            updateControlsTarget();
-            controls.addEventListener('change', updateControlsTarget);
+            // --- Universe Elements ---
 
-            // Create Multiple Galaxies
-            createMultipleGalaxies();
+            // 1. Stars (now spread over a larger area for zoom-out visibility)
+            const starCount = 50000; // Even more stars for a denser field
+            const starSpread = 7000; // Increased spread for stars
+            const starGeometry = new THREE.BufferGeometry();
+            const starVertices = new Float32Array(starCount * 3);
+            const starVelocities = new Float32Array(starCount * 3); // Added for star movement
 
-            // Create Background Stars
-            createBackgroundStars();
+            for (let i = 0; i < starCount * 3; i += 3) {
+                starVertices[i] = (Math.random() - 0.5) * 2 * starSpread;
+                starVertices[i + 1] = (Math.random() - 0.5) * 2 * starSpread;
+                starVertices[i + 2] = (Math.random() - 0.5) * 2 * starSpread;
 
-            // Create Cosmic Dust/Nebula layers
-            createCosmicDustLayers();
+                // Random velocity for each star (slower than meteors)
+                starVelocities[i] = (Math.random() - 0.5) * 0.1;
+                starVelocities[i + 1] = (Math.random() - 0.5) * 0.1;
+                starVelocities[i + 2] = (Math.random() - 0.5) * 0.1;
+            }
+            starGeometry.setAttribute('position', new THREE.BufferAttribute(starVertices, 3));
+            const starMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.8 });
+            const stars = new THREE.Points(starGeometry, starMaterial);
+            scene.add(stars);
 
-            window.addEventListener('resize', onWindowResize, false);
+            // 2. Black Hole
+            const blackHoleRadius = 25; // Slightly larger black hole
+            const blackHoleAbsorptionRadius = blackHoleRadius * 6; // Significantly increased radius for absorption
+            const blackHoleGeometry = new THREE.SphereGeometry(blackHoleRadius, 32, 32);
+            const blackHoleMaterial = new THREE.MeshStandardMaterial({ color: 0x010101, emissive: 0x000000, roughness: 0.1, metalness: 0.9 });
+            const blackHole = new THREE.Mesh(blackHoleGeometry, blackHoleMaterial);
+            blackHole.position.set(0, 0, 0); // Center the black hole
+            scene.add(blackHole);
+
+            // Objects orbiting the Black Hole (now subject to more noticeable absorption)
+            const blackHoleOrbiters = [];
+            const bhOrbiterData = [
+                { radius: 2, color: 0x888888, orbitRadius: blackHoleRadius * 2, speed: 0.02, name: "Asteroid1" },
+                { radius: 1.5, color: 0x996633, orbitRadius: blackHoleRadius * 4, speed: 0.015, name: "Comet1" },
+                { radius: 3, color: 0x444444, orbitRadius: blackHoleRadius * 7, speed: 0.01, name: "Debris1" },
+            ];
+
+            bhOrbiterData.forEach(data => {
+                const geometry = new THREE.SphereGeometry(data.radius, 16, 16);
+                const material = new THREE.MeshStandardMaterial({ color: data.color, roughness: 0.8 });
+                const obj = new THREE.Mesh(geometry, material);
+                obj.orbitRadius = data.orbitRadius;
+                obj.orbitSpeed = data.speed;
+                obj.orbitAngle = Math.random() * Math.PI * 2;
+                obj.name = data.name;
+                blackHoleOrbiters.push(obj);
+                scene.add(obj);
+            });
+
+
+            // --- Multiple Solar Systems ---
+            const solarSystems = [];
+            const solarSystemUniverseSpread = 4000; // Spread for solar systems
+
+            // Function to create a solar system group
+            function createSolarSystem(sunPosition, planetsData, systemName = "Generic") {
+                // Create a group to hold the sun and planets for easier rotation
+                const systemGroup = new THREE.Group();
+                systemGroup.position.copy(sunPosition);
+
+                // Random rotation for the entire solar system group to achieve different planes
+                systemGroup.rotation.x = Math.random() * Math.PI;
+                systemGroup.rotation.y = Math.random() * Math.PI;
+                systemGroup.rotation.z = Math.random() * Math.PI;
+
+
+                const sunRadius = (systemName === "Our Solar System") ? 15 : 25; // Smaller sun for our solar system
+                const sunGeometry = new THREE.SphereGeometry(sunRadius, 64, 64);
+                // Enhanced sun material for a more realistic glow
+                const sunMaterial = new THREE.MeshStandardMaterial({
+                    color: 0xffdd00, // Base color
+                    emissive: 0xffdd00, // Emissive color for glow
+                    emissiveIntensity: 2.0, // Increased intensity
+                    roughness: 0.8, // Slightly rough surface
+                    metalness: 0.1 // Not very metallic
+                });
+                const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+                sun.position.set(0,0,0); // Sun is at the origin of its systemGroup
+                systemGroup.add(sun); // Add sun to the system group
+
+                // Point light for the sun
+                const sunLight = new THREE.PointLight(0xffffff, 2.0, 1000); // Increased light intensity
+                sunLight.position.copy(sun.position); // Light source is at the sun's local origin
+                systemGroup.add(sunLight); // Add light to system group
+
+                const planets = [];
+                planetsData.forEach(data => {
+                    const planetGeometry = new THREE.SphereGeometry(data.radius, 32, 32);
+                    const planetMaterial = new THREE.MeshStandardMaterial({ color: data.color, roughness: 0.7, metalness: 0.2 });
+                    const planet = new THREE.Mesh(planetGeometry, planetMaterial);
+                    planet.orbitRadius = data.orbitRadius;
+                    planet.orbitSpeed = data.speed;
+                    planet.orbitAngle = data.orbitOffset || Math.random() * Math.PI * 2; // Random initial angle if not specified
+                    planet.name = data.name || 'Planet'; // For naming purposes
+
+                    if (data.name === "Saturn") {
+                        // Add a simple ring for Saturn
+                        const ringGeometry = new THREE.RingGeometry(data.radius * 1.2, data.radius * 2, 64);
+                        const ringMaterial = new THREE.MeshBasicMaterial({ color: 0x998877, side: THREE.DoubleSide, transparent: true, opacity: 0.7 });
+                        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                        ring.rotation.x = Math.PI / 2; // Make it horizontal
+                        planet.add(ring);
+                    }
+                    planets.push(planet);
+                    sun.add(planet); // Planets orbit the sun
+                });
+
+                solarSystems.push({ group: systemGroup, sun: sun, planets: planets, systemName: systemName });
+                scene.add(systemGroup); // Add the whole system group to the scene
+            }
+
+            // Define data for "Our" Solar System
+            const ourSolarSystemPlanetsData = [
+                { name: "Mercury", radius: 1, color: 0x8a8a8a, orbitRadius: 30, speed: 0.015 },
+                { name: "Venus", radius: 2, color: 0xcc9900, orbitRadius: 40, speed: 0.01 },
+                { name: "Earth", radius: 2.5, color: 0x0077be, orbitRadius: 55, speed: 0.008, orbitOffset: Math.PI / 4 },
+                { name: "Mars", radius: 1.8, color: 0xcc3300, orbitRadius: 70, speed: 0.006 },
+                { name: "Jupiter", radius: 10, color: 0xccaa77, orbitRadius: 110, speed: 0.003 },
+                { name: "Saturn", radius: 8, color: 0xddeedd, orbitRadius: 140, speed: 0.0025 },
+                { name: "Uranus", radius: 6, color: 0x88ccff, orbitRadius: 170, speed: 0.002 },
+                { name: "Neptune", radius: 6, color: 0x4488ff, orbitRadius: 200, speed: 0.0015 },
+            ];
+            // Place "Our Solar System" at a slightly offset but still central-ish location
+            createSolarSystem(new THREE.Vector3(-600, 0, -300), ourSolarSystemPlanetsData, "Our Solar System");
+
+            // Generate 29 more generic solar systems
+            for (let i = 0; i < 29; i++) {
+                const randomX = (Math.random() - 0.5) * 2 * solarSystemUniverseSpread;
+                const randomY = (Math.random() - 0.5) * 2 * solarSystemUniverseSpread * 0.5; // Flatter spread for systems
+                const randomZ = (Math.random() - 0.5) * 2 * solarSystemUniverseSpread;
+                const randomPosition = new THREE.Vector3(randomX, randomY, randomZ);
+
+                const randomPlanetsData = [];
+                const numPlanets = 3 + Math.floor(Math.random() * 4); // 3 to 6 planets
+                for (let j = 0; j < numPlanets; j++) {
+                    randomPlanetsData.push({
+                        radius: 2 + Math.random() * 6, // Random planet size
+                        color: new THREE.Color(Math.random(), Math.random(), Math.random()), // Random color
+                        orbitRadius: 40 + j * 30 + Math.random() * 10, // Increasing orbit radius
+                        speed: 0.001 + Math.random() * 0.007 // Random orbit speed
+                    });
+                }
+                createSolarSystem(randomPosition, randomPlanetsData, `Generic Solar System ${i + 1}`);
+            }
+
+
+            // --- Random Meteors ---
+            const meteorCount = 5000; // Increased meteor count
+            const meteorSpread = 2000; // Increased spread for meteors
+            const meteorGeometry = new THREE.BufferGeometry();
+            const meteorVertices = new Float32Array(meteorCount * 3);
+            const meteorVelocities = new Float32Array(meteorCount * 3); // For random movement
+
+            for (let i = 0; i < meteorCount * 3; i += 3) {
+                meteorVertices[i] = (Math.random() - 0.5) * 2 * meteorSpread;
+                meteorVertices[i + 1] = (Math.random() - 0.5) * 2 * meteorSpread;
+                meteorVertices[i + 2] = (Math.random() - 0.5) * 2 * meteorSpread;
+
+                // Random velocity for each meteor
+                meteorVelocities[i] = (Math.random() - 0.5) * 1.0; // Slightly faster movement
+                meteorVelocities[i + 1] = (Math.random() - 0.5) * 1.0;
+                meteorVelocities[i + 2] = (Math.random() - 0.5) * 1.0;
+            }
+            meteorGeometry.setAttribute('position', new THREE.BufferAttribute(meteorVertices, 3));
+            const meteorMaterial = new THREE.PointsMaterial({ color: 0x777777, size: 0.7 }); // Darker, slightly larger points
+            const meteorsMesh = new THREE.Points(meteorGeometry, meteorMaterial);
+            scene.add(meteorsMesh);
+
+            // --- Comet ---
+            const cometHeadRadius = 5;
+            const cometHeadGeometry = new THREE.SphereGeometry(cometHeadRadius, 16, 16);
+            const cometHeadMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, emissive: 0xddddff, emissiveIntensity: 0.8 });
+            const cometHead = new THREE.Mesh(cometHeadGeometry, cometHeadMaterial);
+            scene.add(cometHead);
+
+            const tailLength = 50;
+            const tailGeometry = new THREE.BufferGeometry();
+            const tailPositions = new Float32Array(tailLength * 3);
+            const tailMaterial = new THREE.PointsMaterial({
+                color: 0xadd8e6, // Light blue/cyan color
+                size: 2,
+                transparent: true,
+                opacity: 0.5
+            });
+            const cometTail = new THREE.Points(tailGeometry, tailMaterial);
+            scene.add(cometTail);
+
+            let cometTrajectoryIndex = 0;
+            const cometPath = [
+                new THREE.Vector3(-solarSystemUniverseSpread, 0, -solarSystemUniverseSpread),
+                new THREE.Vector3(solarSystemUniverseSpread / 2, 500, solarSystemUniverseSpread / 2),
+                new THREE.Vector3(solarSystemUniverseSpread, -500, -solarSystemUniverseSpread),
+                new THREE.Vector3(-solarSystemUniverseSpread / 2, -200, solarSystemUniverseSpread / 2)
+            ];
+            const cometSpeed = 10; // Speed of the comet
+            const cometClock = new THREE.Clock(); // For consistent movement
+            let currentCometTarget = cometPath[cometTrajectoryIndex];
+
+            // Initialize tail positions to comet head position
+            for (let i = 0; i < tailLength * 3; i += 3) {
+                tailPositions[i] = cometHead.position.x;
+                tailPositions[i + 1] = cometHead.position.y;
+                tailPositions[i + 2] = cometHead.position.z;
+            }
+            tailGeometry.setAttribute('position', new THREE.BufferAttribute(tailPositions, 3));
+
+
+            // --- User Interaction (Mouse Control for Camera) ---
+            let isDragging = false;
+            let previousMousePosition = { x: 0, y: 0 };
+            const rotationSpeed = 0.005;
+            const zoomSpeed = 0.1;
+
+            renderer.domElement.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            renderer.domElement.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
+            renderer.domElement.addEventListener('mousemove', (e) => {
+                if (!isDragging) return;
+
+                const deltaX = e.clientX - previousMousePosition.x;
+                const deltaY = e.clientY - previousMousePosition.y;
+
+                // Rotate around the central point (0,0,0)
+                const spherical = new THREE.Spherical().setFromVector3(camera.position);
+
+                spherical.theta -= deltaX * rotationSpeed;
+                spherical.phi -= deltaY * rotationSpeed;
+
+                // Clamp phi to prevent camera from flipping upside down
+                spherical.phi = Math.max(0.1, Math.PI - 0.1, spherical.phi);
+
+                camera.position.setFromSpherical(spherical);
+                camera.lookAt(new THREE.Vector3(0, 0, 0)); // Always look at the center of the scene
+
+                previousMousePosition = { x: e.clientX, y: e.clientY };
+            });
+
+            renderer.domElement.addEventListener('wheel', (e) => {
+                e.preventDefault(); // Prevent page scrolling
+                const zoomFactor = e.deltaY > 0 ? (1 + zoomSpeed) : (1 - zoomSpeed); // Zoom out or in
+                camera.position.multiplyScalar(zoomFactor);
+                // Ensure camera doesn't go too close to the origin or too far
+                const minDistance = 50;
+                const maxDistance = 6000; // Increased max distance for zooming out even further
+                const currentDistance = camera.position.length();
+                if (currentDistance < minDistance) {
+                    camera.position.setLength(minDistance);
+                } else if (currentDistance > maxDistance) {
+                    camera.position.setLength(maxDistance);
+                }
+                camera.lookAt(new THREE.Vector3(0, 0, 0));
+            });
+
+            // --- Responsive Design ---
+            window.addEventListener('resize', () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // --- Animation Loop ---
+            function animate() {
+                requestAnimationFrame(animate);
+
+                // Rotate the black hole
+                blackHole.rotation.y += 0.002;
+
+                // Animate solar systems
+                solarSystems.forEach(sys => {
+                    sys.sun.rotation.y += 0.001; // Sun's self-rotation
+                    sys.planets.forEach(planet => {
+                        planet.orbitAngle += planet.orbitSpeed;
+                        planet.position.x = planet.orbitRadius * Math.cos(planet.orbitAngle);
+                        planet.position.y = planet.orbitRadius * 0.1 * Math.sin(planet.orbitAngle * 2); // Slight tilt
+                        planet.position.z = planet.orbitRadius * Math.sin(planet.orbitAngle);
+                        planet.rotation.y += 0.01; // Planet's self-rotation
+                    });
+                });
+
+                // Animate objects orbiting the Black Hole AND apply absorption
+                const blackHolePosition = blackHole.position;
+                blackHoleOrbiters.forEach(obj => {
+                    obj.orbitAngle += obj.orbitSpeed;
+                    obj.position.x = blackHolePosition.x + obj.orbitRadius * Math.cos(obj.orbitAngle);
+                    obj.position.y = blackHolePosition.y + obj.orbitRadius * 0.1 * Math.sin(obj.orbitAngle * 3); // Different tilt
+                    obj.position.z = blackHolePosition.z + obj.orbitRadius * Math.sin(obj.orbitAngle);
+                    obj.rotation.y += 0.02; // Self-rotation
+
+                    // Check for absorption - if too close, relocate to a new orbit further away
+                    const distanceToBlackHole = obj.position.distanceTo(blackHolePosition);
+                    if (distanceToBlackHole < blackHoleAbsorptionRadius) {
+                        obj.orbitRadius = blackHoleRadius * (7 + Math.random() * 8); // New random orbit radius, further out
+                        obj.orbitAngle = Math.random() * Math.PI * 2; // New random starting angle
+                        obj.position.x = blackHolePosition.x + obj.orbitRadius * Math.cos(obj.orbitAngle);
+                        obj.position.y = blackHolePosition.y + obj.orbitRadius * 0.1 * Math.sin(obj.orbitAngle * 3);
+                        obj.position.z = blackHolePosition.z + obj.orbitRadius * Math.sin(obj.orbitAngle);
+                    }
+                });
+
+                // Black Hole Absorption: Relocate stars that get too close
+                const starPositions = starGeometry.attributes.position.array;
+                const newStarSpawnSpread = starSpread * 1.5; // Stars respawn within a slightly larger area
+
+                for (let i = 0; i < starCount; i++) {
+                    // Update star positions based on their velocities
+                    starPositions[i * 3] += starVelocities[i * 3];
+                    starPositions[i * 3 + 1] += starVelocities[i * 3 + 1];
+                    starPositions[i * 3 + 2] += starVelocities[i * 3 + 2];
+
+                    // Wrap around stars to keep them within the visible area
+                    if (Math.abs(starPositions[i * 3]) > starSpread) starPositions[i * 3] *= -1;
+                    if (Math.abs(starPositions[i * 3 + 1]) > starSpread) starPositions[i * 3 + 1] *= -1;
+                    if (Math.abs(starPositions[i * 3 + 2]) > starSpread) starPositions[i * 3 + 2] *= -1;
+
+                    // Also check for black hole absorption for stars
+                    const x = starPositions[i * 3];
+                    const y = starPositions[i * 3 + 1];
+                    const z = starPositions[i * 3 + 2];
+
+                    const distance = Math.sqrt(
+                        Math.pow(x - blackHolePosition.x, 2) +
+                        Math.pow(y - blackHolePosition.y, 2) +
+                        Math.pow(z - blackHolePosition.z, 2)
+                    );
+
+                    if (distance < blackHoleAbsorptionRadius) {
+                        // Relocate the star to a new random position far away
+                        starPositions[i * 3] = (Math.random() - 0.5) * 2 * newStarSpawnSpread;
+                        starPositions[i * 3 + 1] = (Math.random() - 0.5) * 2 * newStarSpawnSpread;
+                        starPositions[i * 3 + 2] = (Math.random() - 0.5) * 2 * newStarSpawnSpread;
+                    }
+                }
+                starGeometry.attributes.position.needsUpdate = true; // Tell Three.js to update the GPU buffer
+
+                // Animate random meteors
+                const meteorPositions = meteorsMesh.geometry.attributes.position.array;
+                const meteorVelocitiesArray = meteorVelocities;
+
+                for (let i = 0; i < meteorCount * 3; i += 3) {
+                    meteorPositions[i] += meteorVelocitiesArray[i];
+                    meteorPositions[i + 1] += meteorVelocitiesArray[i + 1];
+                    meteorPositions[i + 2] += meteorVelocitiesArray[i + 2];
+
+                    // Wrap around if they go too far to keep them within visible range
+                    if (Math.abs(meteorPositions[i]) > meteorSpread) meteorPositions[i] *= -1;
+                    if (Math.abs(meteorPositions[i + 1]) > meteorSpread) meteorPositions[i + 1] *= -1;
+                    if (Math.abs(meteorPositions[i + 2]) > meteorSpread) meteorPositions[i + 2] *= -1;
+                }
+                meteorsMesh.geometry.attributes.position.needsUpdate = true;
+
+                // Animate Comet
+                const delta = cometClock.getDelta(); // Time elapsed since last frame
+
+                // Move comet head towards its target
+                const moveDirection = new THREE.Vector3().subVectors(currentCometTarget, cometHead.position).normalize();
+                cometHead.position.addScaledVector(moveDirection, cometSpeed * delta);
+
+                // If comet reached its current target, set a new one
+                if (cometHead.position.distanceTo(currentCometTarget) < cometSpeed * delta * 2) { // Small buffer for target arrival
+                    cometTrajectoryIndex = (cometTrajectoryIndex + 1) % cometPath.length;
+                    currentCometTarget = cometPath[cometTrajectoryIndex];
+                }
+
+                // Update comet tail
+                // Shift all tail points back by one position
+                for (let i = tailLength * 3 - 1; i >= 3; i--) {
+                    tailPositions[i] = tailPositions[i - 3];
+                }
+                // Set the first tail point to the current comet head position
+                tailPositions[0] = cometHead.position.x;
+                tailPositions[1] = cometHead.position.y;
+                tailPositions[2] = cometHead.position.z;
+                tailGeometry.attributes.position.needsUpdate = true;
+
+
+                renderer.render(scene, camera);
+            }
 
             animate();
-        }
-
-        function createMultipleGalaxies() {
-            for (let i = 0; i < numberOfGalaxies; i++) {
-                const x = (Math.random() - 0.5) * (sceneExtent - galaxyDistributionPadding * 2);
-                const y = (Math.random() - 0.5) * (sceneExtent - galaxyDistributionPadding * 2);
-                const z = (Math.random() - 0.5) * (sceneExtent - galaxyDistributionPadding * 2);
-
-                const galaxyOptions = {
-                    position: new THREE.Vector3(x, y, z),
-                    armCount: Math.round(2 + Math.random() * 3),
-                    rotationSpeed: (Math.random() * 0.0005) + 0.0002,
-                    colorCentral: new THREE.Color().setHSL(Math.random(), 0.8, 0.6),
-                    colorOuter: new THREE.Color().setHSL(Math.random(), 0.6, 0.4),
-                    diskColor: new THREE.Color().setHSL(Math.random(), 1.0, 0.5),
-                    galaxyRadius: defaultGalaxyRadius * (0.8 + Math.random() * 0.4),
-                    particleCount: Math.floor(defaultParticleCount * (0.8 + Math.random() * 0.4))
-                };
-
-                const newGalaxy = new Galaxy(galaxyOptions);
-                newGalaxy.init();
-                galaxies.push(newGalaxy);
-            }
-        }
-
-        function createBackgroundStars() {
-            const positions = new Float32Array(backgroundStarCount * 3);
-            const sizes = new Float32Array(backgroundStarCount);
-            const opacities = new Float32Array(backgroundStarCount);
-
-            for (let i = 0; i < backgroundStarCount; i++) {
-                const radius = (Math.pow(Math.random(), 2) * 0.5 + 0.5) * backgroundStarFieldSize;
-                const theta = Math.random() * Math.PI * 2;
-                const phi = Math.acos(Math.random() * 2 - 1);
-
-                positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
-                positions[i * 3 + 1] = radius * Math.sin(phi) * Math.sin(theta);
-                positions[i * 3 + 2] = radius * Math.cos(phi);
-
-                sizes[i] = backgroundStarMinSize + Math.random() * (backgroundStarMaxSize - backgroundStarMinSize);
-                opacities[i] = 0.5 + Math.random() * 0.5;
-            }
-
-            const geometry = new THREE.BufferGeometry();
-            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
-            geometry.setAttribute('opacity', new THREE.BufferAttribute(opacities, 1));
-
-            const material = new THREE.ShaderMaterial({
-                uniforms: {
-                    pointTexture: { value: new THREE.TextureLoader().load('https://cdnjs.cloudflare.com/ajax/libs/three.js/0.165.0/examples/textures/sprites/spark1.png') },
-                    time: { value: 0.0 }
-                },
-                vertexShader: `
-                    attribute float size;
-                    attribute float opacity;
-                    varying float vOpacity;
-                    uniform float time;
-
-                    void main() {
-                        vOpacity = opacity * (0.7 + sin(position.x * 0.1 + time * ${backgroundStarTwinkleSpeed}) * 0.3);
-                        vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
-                        gl_PointSize = size * ( 200.0 / -mvPosition.z ); // Base size for laptops
-                        gl_Position = projectionMatrix * mvPosition;
-                    }
-                `,
-                fragmentShader: `
-                    uniform sampler2D pointTexture;
-                    varying float vOpacity;
-                    void main() {
-                        gl_FragColor = vec4( 1.0, 1.0, 1.0, vOpacity ) * texture2D( pointTexture, gl_PointCoord );
-                    }
-                `,
-                blending: THREE.AdditiveBlending,
-                depthTest: false,
-                transparent: true
-            });
-
-            backgroundStars = new THREE.Points(geometry, material);
-            scene.add(backgroundStars);
-        }
-
-        function createCosmicDustLayers() {
-            nebulaLayersData.forEach(layer => {
-                const geometry = new THREE.SphereGeometry(layer.radius, 32, 32); // Balanced segments
-                const material = new THREE.MeshBasicMaterial({
-                    color: layer.color,
-                    transparent: true,
-                    opacity: layer.opacity,
-                    side: THREE.BackSide,
-                    blending: THREE.AdditiveBlending
-                });
-                const dustMesh = new THREE.Mesh(geometry, material);
-                dustMesh.rotationSpeed = layer.rotationSpeed;
-                cosmicDustLayers.push(dustMesh);
-                scene.add(dustMesh);
-            });
-        }
-
-        function animate() {
-            requestAnimationFrame(animate);
-
-            controls.update();
-            
-            galaxies.forEach(galaxy => {
-                galaxy.update();
-            });
-
-            if(backgroundStars) {
-                backgroundStars.material.uniforms.time.value += 1;
-                backgroundStars.rotation.y += 0.000005;
-                backgroundStars.rotation.x += 0.000002;
-            }
-            
-            cosmicDustLayers.forEach(layer => {
-                layer.rotation.y += layer.rotationSpeed;
-                layer.rotation.x += layer.rotationSpeed * 0.5;
-            });
-
-            renderer.render(scene, camera);
-        }
-
-        function onWindowResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
-        }
-
-        window.onload = init;
+        };
     </script>
 </body>
 </html>
